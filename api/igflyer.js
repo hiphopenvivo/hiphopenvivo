@@ -23,7 +23,27 @@ function decodeHtml(s) {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>');
+    .replace(/&gt;/g, '>')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#x2F;/g, '/');
+}
+
+function cleanText(s, max = 1200) {
+  return decodeHtml(String(s || ''))
+    .replace(/\\u0026/g, '&')
+    .replace(/\\n/g, ' ')
+    .replace(/\\\//g, '/')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+}
+
+function metaValue(html, key, attr = 'property') {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const a = new RegExp(`<meta[^>]+${attr}=["']${escaped}["'][^>]+content=["']([^"']*)["']`, 'i');
+  const b = new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+${attr}=["']${escaped}["']`, 'i');
+  const m = html.match(a) || html.match(b);
+  return m ? cleanText(m[1]) : '';
 }
 
 function safeImageUrl(raw) {
@@ -39,14 +59,39 @@ async function fetchWithUA(url, accept = '*/*') {
   return fetch(url, {
     redirect: 'follow',
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/139 Mobile Safari/537.36 HHV/2.9.6',
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/139 Mobile Safari/537.36 HHV/2.9.7',
       'Accept': accept,
       'Accept-Language': 'es-AR,es;q=0.9,en;q=0.7'
     }
   });
 }
 
-async function resolveOriginal(info) {
+async function readPostPage(info) {
+  try {
+    const page = await fetchWithUA(info.canonical, 'text/html,application/xhtml+xml');
+    if (!page.ok) return null;
+    const html = await page.text();
+    const title = metaValue(html, 'og:title');
+    const description = metaValue(html, 'og:description') || metaValue(html, 'description', 'name');
+    const imageRaw = metaValue(html, 'og:image');
+    let username = '';
+    const usernameMatch = html.match(/"username"\s*:\s*"([^"]+)"/i);
+    if (usernameMatch) username = cleanText(usernameMatch[1], 120);
+    return {
+      html,
+      meta: {
+        title,
+        description,
+        username,
+        image_url: safeImageUrl(imageRaw)
+      }
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+async function resolveOriginal(info, pageData = null) {
   const mediaCandidates = [
     `https://www.instagram.com/${info.kind}/${info.code}/media/?size=l`,
     `https://www.instagram.com/p/${info.code}/media/?size=l`
@@ -62,30 +107,29 @@ async function resolveOriginal(info) {
     } catch (_) {}
   }
 
-  try {
-    const page = await fetchWithUA(info.canonical, 'text/html,application/xhtml+xml');
-    if (page.ok) {
-      const html = await page.text();
-      const patterns = [
-        /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i,
-        /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i,
-        /"display_url"\s*:\s*"([^"]+)"/i
-      ];
-      let direct = '';
-      for (const re of patterns) {
-        const m = html.match(re);
-        if (m) {
-          direct = safeImageUrl(m[1].replace(/\\u0026/g, '&').replace(/\\\//g, '/'));
-          if (direct) break;
-        }
-      }
+  const page = pageData || await readPostPage(info);
+  if (page && page.meta && page.meta.image_url) {
+    try {
+      const direct = page.meta.image_url;
+      const r = await fetchWithUA(direct, 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8');
+      const type = (r.headers.get('content-type') || '').toLowerCase();
+      if (r.ok && type.startsWith('image/')) return { response: r, imageUrl: direct, method: 'og' };
+    } catch (_) {}
+  }
+
+  if (page && page.html) {
+    const m = page.html.match(/"display_url"\s*:\s*"([^"]+)"/i);
+    if (m) {
+      const direct = safeImageUrl(m[1].replace(/\\u0026/g, '&').replace(/\\\//g, '/'));
       if (direct) {
-        const r = await fetchWithUA(direct, 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8');
-        const type = (r.headers.get('content-type') || '').toLowerCase();
-        if (r.ok && type.startsWith('image/')) return { response: r, imageUrl: direct, method: 'og' };
+        try {
+          const r = await fetchWithUA(direct, 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8');
+          const type = (r.headers.get('content-type') || '').toLowerCase();
+          if (r.ok && type.startsWith('image/')) return { response: r, imageUrl: direct, method: 'json' };
+        } catch (_) {}
       }
     }
-  } catch (_) {}
+  }
 
   return null;
 }
@@ -117,20 +161,32 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    let found = await resolveOriginal(info);
+    const wantsMeta = String(req.query && req.query.meta || '') === '1';
+    const pageData = wantsMeta ? await readPostPage(info) : null;
+    let found = await resolveOriginal(info, pageData);
     if (!found) found = await resolveDriveFallback(req.query && req.query.fallbackId);
+
+    if (wantsMeta) {
+      res.statusCode = found || pageData ? 200 : 404;
+      res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=1800');
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      return res.end(JSON.stringify({
+        ok: Boolean(found || pageData),
+        code: info.code,
+        canonical: info.canonical,
+        title: pageData?.meta?.title || '',
+        description: pageData?.meta?.description || '',
+        username: pageData?.meta?.username || '',
+        image_url: found?.imageUrl || pageData?.meta?.image_url || '',
+        method: found?.method || (pageData ? 'page-meta' : '')
+      }));
+    }
+
     if (!found) {
       res.statusCode = 404;
       res.setHeader('Cache-Control', 'public, max-age=120, s-maxage=300');
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       return res.end(JSON.stringify({ ok: false, code: info.code, error: 'original_not_resolved' }));
-    }
-
-    if (String(req.query && req.query.meta || '') === '1') {
-      res.statusCode = 200;
-      res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=1800');
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      return res.end(JSON.stringify({ ok: true, code: info.code, canonical: info.canonical, image_url: found.imageUrl, method: found.method }));
     }
 
     const r = found.response;
