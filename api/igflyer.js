@@ -28,7 +28,7 @@ function decodeHtml(s) {
     .replace(/&#x2F;/g, '/');
 }
 
-function cleanText(s, max = 1200) {
+function cleanText(s, max = 1600) {
   return decodeHtml(String(s || ''))
     .replace(/\\u0026/g, '&')
     .replace(/\\n/g, ' ')
@@ -66,29 +66,55 @@ async function fetchWithUA(url, accept = '*/*') {
   });
 }
 
-async function readPostPage(info) {
-  try {
-    const page = await fetchWithUA(info.canonical, 'text/html,application/xhtml+xml');
-    if (!page.ok) return null;
-    const html = await page.text();
-    const title = metaValue(html, 'og:title');
-    const description = metaValue(html, 'og:description') || metaValue(html, 'description', 'name');
-    const imageRaw = metaValue(html, 'og:image');
-    let username = '';
-    const usernameMatch = html.match(/"username"\s*:\s*"([^"]+)"/i);
-    if (usernameMatch) username = cleanText(usernameMatch[1], 120);
-    return {
-      html,
-      meta: {
-        title,
-        description,
-        username,
-        image_url: safeImageUrl(imageRaw)
-      }
-    };
-  } catch (_) {
-    return null;
+function extractPageMeta(html) {
+  const title = metaValue(html, 'og:title') || metaValue(html, 'twitter:title', 'name');
+  const description = metaValue(html, 'og:description') || metaValue(html, 'description', 'name') || metaValue(html, 'twitter:description', 'name');
+  const imageRaw = metaValue(html, 'og:image') || metaValue(html, 'twitter:image', 'name');
+  let username = '';
+  const usernamePatterns = [
+    /"username"\s*:\s*"([^"]+)"/i,
+    /"owner"\s*:\s*\{[^{}]*"username"\s*:\s*"([^"]+)"/i,
+    /@([A-Za-z0-9._]{2,30})\s+(?:on Instagram|• Instagram)/i
+  ];
+  for (const re of usernamePatterns) {
+    const m = html.match(re);
+    if (m) { username = cleanText(m[1], 120); break; }
   }
+  let caption = description;
+  const captionPatterns = [
+    /"edge_media_to_caption"\s*:\s*\{.*?"text"\s*:\s*"([^"]+)"/i,
+    /"caption"\s*:\s*\{[^{}]*"text"\s*:\s*"([^"]+)"/i,
+    /"accessibility_caption"\s*:\s*"([^"]+)"/i
+  ];
+  if (!caption) {
+    for (const re of captionPatterns) {
+      const m = html.match(re);
+      if (m) { caption = cleanText(m[1]); break; }
+    }
+  }
+  return { title, description: caption, username, image_url: safeImageUrl(imageRaw) };
+}
+
+async function readPostPage(info) {
+  const candidates = [
+    info.canonical,
+    `${info.canonical}embed/captioned/`,
+    `${info.canonical}embed/`
+  ];
+  let merged = { title: '', description: '', username: '', image_url: '' };
+  let bestHtml = '';
+  for (const url of candidates) {
+    try {
+      const page = await fetchWithUA(url, 'text/html,application/xhtml+xml');
+      if (!page.ok) continue;
+      const html = await page.text();
+      const meta = extractPageMeta(html);
+      if (!bestHtml) bestHtml = html;
+      for (const key of Object.keys(merged)) if (!merged[key] && meta[key]) merged[key] = meta[key];
+      if (merged.username && merged.description && merged.image_url) break;
+    } catch (_) {}
+  }
+  return bestHtml ? { html: bestHtml, meta: merged } : null;
 }
 
 async function resolveOriginal(info, pageData = null) {
@@ -96,17 +122,13 @@ async function resolveOriginal(info, pageData = null) {
     `https://www.instagram.com/${info.kind}/${info.code}/media/?size=l`,
     `https://www.instagram.com/p/${info.code}/media/?size=l`
   ];
-
   for (const url of mediaCandidates) {
     try {
       const r = await fetchWithUA(url, 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8');
       const type = (r.headers.get('content-type') || '').toLowerCase();
-      if (r.ok && type.startsWith('image/')) {
-        return { response: r, imageUrl: r.url, method: 'media' };
-      }
+      if (r.ok && type.startsWith('image/')) return { response: r, imageUrl: r.url, method: 'media' };
     } catch (_) {}
   }
-
   const page = pageData || await readPostPage(info);
   if (page && page.meta && page.meta.image_url) {
     try {
@@ -116,7 +138,6 @@ async function resolveOriginal(info, pageData = null) {
       if (r.ok && type.startsWith('image/')) return { response: r, imageUrl: direct, method: 'og' };
     } catch (_) {}
   }
-
   if (page && page.html) {
     const m = page.html.match(/"display_url"\s*:\s*"([^"]+)"/i);
     if (m) {
@@ -130,7 +151,6 @@ async function resolveOriginal(info, pageData = null) {
       }
     }
   }
-
   return null;
 }
 
@@ -159,13 +179,11 @@ module.exports = async function handler(req, res) {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return res.end(JSON.stringify({ ok: false, error: 'invalid_instagram_url' }));
   }
-
   try {
     const wantsMeta = String(req.query && req.query.meta || '') === '1';
     const pageData = wantsMeta ? await readPostPage(info) : null;
     let found = await resolveOriginal(info, pageData);
     if (!found) found = await resolveDriveFallback(req.query && req.query.fallbackId);
-
     if (wantsMeta) {
       res.statusCode = found || pageData ? 200 : 404;
       res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=1800');
@@ -181,14 +199,12 @@ module.exports = async function handler(req, res) {
         method: found?.method || (pageData ? 'page-meta' : '')
       }));
     }
-
     if (!found) {
       res.statusCode = 404;
       res.setHeader('Cache-Control', 'public, max-age=120, s-maxage=300');
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       return res.end(JSON.stringify({ ok: false, code: info.code, error: 'original_not_resolved' }));
     }
-
     const r = found.response;
     const type = (r.headers.get('content-type') || 'image/jpeg').split(';')[0];
     const body = Buffer.from(await r.arrayBuffer());
