@@ -12,6 +12,11 @@ function cleanInstagramUrl(raw) {
   }
 }
 
+function cleanDriveId(raw) {
+  const id = String(raw || '').trim();
+  return /^[A-Za-z0-9_-]{10,}$/.test(id) ? id : '';
+}
+
 function decodeHtml(s) {
   return String(s || '')
     .replace(/&amp;/g, '&')
@@ -34,7 +39,7 @@ async function fetchWithUA(url, accept = '*/*') {
   return fetch(url, {
     redirect: 'follow',
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/139 Mobile Safari/537.36 HHV/2.9.5',
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/139 Mobile Safari/537.36 HHV/2.9.6',
       'Accept': accept,
       'Accept-Language': 'es-AR,es;q=0.9,en;q=0.7'
     }
@@ -85,6 +90,24 @@ async function resolveOriginal(info) {
   return null;
 }
 
+async function resolveDriveFallback(id) {
+  const clean = cleanDriveId(id);
+  if (!clean) return null;
+  const candidates = [
+    `https://drive.google.com/uc?export=download&id=${encodeURIComponent(clean)}`,
+    `https://drive.usercontent.google.com/download?id=${encodeURIComponent(clean)}&export=view&confirm=t`,
+    `https://drive.google.com/thumbnail?id=${encodeURIComponent(clean)}&sz=w2000`
+  ];
+  for (const url of candidates) {
+    try {
+      const r = await fetchWithUA(url, 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8');
+      const type = (r.headers.get('content-type') || '').toLowerCase();
+      if (r.ok && type.startsWith('image/')) return { response: r, imageUrl: r.url, method: 'drive-fallback' };
+    } catch (_) {}
+  }
+  return null;
+}
+
 module.exports = async function handler(req, res) {
   const info = cleanInstagramUrl(req.query && req.query.url);
   if (!info) {
@@ -94,7 +117,8 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const found = await resolveOriginal(info);
+    let found = await resolveOriginal(info);
+    if (!found) found = await resolveDriveFallback(req.query && req.query.fallbackId);
     if (!found) {
       res.statusCode = 404;
       res.setHeader('Cache-Control', 'public, max-age=120, s-maxage=300');
@@ -118,7 +142,7 @@ module.exports = async function handler(req, res) {
     res.setHeader('Cache-Control', 'public, max-age=1800, s-maxage=86400, stale-while-revalidate=604800');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Robots-Tag', 'noindex');
-    res.setHeader('X-HHV-Flyer-Source', `instagram-${found.method}`);
+    res.setHeader('X-HHV-Flyer-Source', found.method.startsWith('drive') ? 'drive-fallback' : `instagram-${found.method}`);
     return res.end(body);
   } catch (e) {
     res.statusCode = 502;
