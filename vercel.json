@@ -6,7 +6,8 @@
       "hhv-v2.9.3-preview": false,
       "hhv-v2.9.4-preview": false,
       "hhv-v2.9.5-preview": false,
-      "hhv-v2.9.6-preview": true
+      "hhv-v2.9.6-preview": false,
+      "hhv-v2.9.7-preview": true
     }
   },
   "rewrites": [
