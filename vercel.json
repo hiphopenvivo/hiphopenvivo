@@ -4,11 +4,12 @@
     "deploymentEnabled": {
       "main": false,
       "hhv-v2.9.3-preview": false,
-      "hhv-v2.9.4-preview": true
+      "hhv-v2.9.4-preview": false,
+      "hhv-v2.9.5-preview": true
     }
   },
   "rewrites": [
-    { "source": "/", "destination": "/api/render" }
+    { "source": "/", "destination": "/api/render295" }
   ],
   "headers": [
     {
