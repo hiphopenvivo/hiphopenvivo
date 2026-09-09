@@ -1,6 +1,7 @@
 module.exports = async function handler(req, res) {
   try {
-    const id = String((req.query && req.query.id) || '').trim();
+    const requestUrl = new URL(req.url || '/', 'https://hhv.local');
+    const id = String(requestUrl.searchParams.get('id') || '').trim();
     if (!/^[A-Za-z0-9_-]{10,}$/.test(id)) {
       res.statusCode = 400;
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -17,7 +18,7 @@ module.exports = async function handler(req, res) {
     for (const url of candidates) {
       const r = await fetch(url, {
         redirect: 'follow',
-        headers: { 'User-Agent': 'Mozilla/5.0 HHV-Flyer-Proxy/2.9.2' }
+        headers: { 'User-Agent': 'Mozilla/5.0 HHV-Flyer-Proxy/2.9.5' }
       });
       lastStatus = r.status;
       const type = (r.headers.get('content-type') || '').toLowerCase();
@@ -27,6 +28,7 @@ module.exports = async function handler(req, res) {
         res.setHeader('Content-Type', type.split(';')[0]);
         res.setHeader('Cache-Control', 'public, max-age=1800, s-maxage=86400, stale-while-revalidate=604800');
         res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('X-HHV-Flyer-Source', 'drive');
         return res.end(body);
       }
     }
