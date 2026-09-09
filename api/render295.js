@@ -1,10 +1,18 @@
 const zlib = require('zlib');
 
 const payload =
-  require('../payload295/part01') +
-  require('../payload295/part02') +
-  require('../payload295/part03') +
-  require('../payload295/part04');
+  require('../payload295/part01_1') +
+  require('../payload295/part01_2') +
+  require('../payload295/part01_3') +
+  require('../payload295/part02_1') +
+  require('../payload295/part02_2') +
+  require('../payload295/part02_3') +
+  require('../payload295/part03_1') +
+  require('../payload295/part03_2') +
+  require('../payload295/part03_3') +
+  require('../payload295/part04_1') +
+  require('../payload295/part04_2') +
+  require('../payload295/part04_3');
 
 let cachedHtml = null;
 
