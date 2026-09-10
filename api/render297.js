@@ -22,6 +22,24 @@ module.exports = function handler(req, res) {
       const recovery = `
 <script>
 (function HHVFlyerRailRecovery(){
+  try{
+    window.img=function(e){
+      var u=(typeof F!=='undefined'&&F[e.id])||e.flyer_url||'';
+      var id=typeof driveId==='function'?driveId(u):'';
+      if(id)return '/api/flyer?id='+encodeURIComponent(id);
+      if(u)return u;
+      var src=typeof http==='function'?http(e.source_url):String(e.source_url||'');
+      return (typeof igSource==='function'&&igSource(src))?('/api/igflyer?url='+encodeURIComponent(src)):'';
+    };
+    window.sourceKind=function(e){
+      var u=(typeof F!=='undefined'&&F[e.id])||e.flyer_url||'';
+      var id=typeof driveId==='function'?driveId(u):'';
+      if(id||u)return 'drive';
+      var src=typeof http==='function'?http(e.source_url):String(e.source_url||'');
+      return (typeof igSource==='function'&&igSource(src))?'ig':'';
+    };
+  }catch(_err){}
+
   var tries=0;
   var timer=setInterval(function(){
     tries++;
@@ -52,7 +70,7 @@ module.exports = function handler(req, res) {
     res.statusCode = statusCode;
     for (const [name, value] of Object.entries(headers)) res.setHeader(name, value);
     res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('X-HHV-Version', '2.9.7-preview-drive-links-recovery');
+    res.setHeader('X-HHV-Version', '2.9.7-preview-drive-image-first');
     return res.end(body);
   } catch (error) {
     console.error('HHV render297 wrapper error', error);
