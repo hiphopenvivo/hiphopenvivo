@@ -38,6 +38,15 @@ module.exports = function handler(req, res) {
       var src=typeof http==='function'?http(e.source_url):String(e.source_url||'');
       return (typeof igSource==='function'&&igSource(src))?'ig':'';
     };
+    window.flyerRailRows=function(){
+      var today=typeof ymd==='function'?ymd(new Date()):'';
+      var all=(typeof E!=='undefined'?E:[]).filter(function(e){return typeof igSource==='function'&&igSource(e.source_url)&&img(e)});
+      var future=all.filter(function(e){return String(e.date||'').slice(0,10)>=today});
+      var rows=(future.length?future:all).slice();
+      var pin='rxnde-akozta-la-plata-2026-09-24';
+      rows.sort(function(a,b){if(a.id===pin)return -1;if(b.id===pin)return 1;return String(a.date||'').localeCompare(String(b.date||''))});
+      return rows.slice(0,30);
+    };
   }catch(_err){}
 
   var tries=0;
@@ -53,6 +62,7 @@ module.exports = function handler(req, res) {
         if(count>0||tries>=40){
           clearInterval(timer);
           document.documentElement.setAttribute('data-hhv-flyer-rail',count>0?'ready':'empty');
+          document.documentElement.setAttribute('data-hhv-doc-feature','rxnde-akozta-la-plata-2026-09-24');
         }
       }
     }catch(err){
@@ -70,7 +80,7 @@ module.exports = function handler(req, res) {
     res.statusCode = statusCode;
     for (const [name, value] of Object.entries(headers)) res.setHeader(name, value);
     res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('X-HHV-Version', '2.9.7-preview-drive-image-first');
+    res.setHeader('X-HHV-Version', '2.9.7-preview-hhv-doc-rxnde');
     return res.end(body);
   } catch (error) {
     console.error('HHV render297 wrapper error', error);
