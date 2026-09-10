@@ -8,11 +8,12 @@
       "hhv-v2.9.5-preview": false,
       "hhv-v2.9.6-preview": false,
       "hhv-v2.9.7-preview": false,
-      "hhv-v2.9.8-unified": true
+      "hhv-v2.9.8-unified": false,
+      "hhv-v2.9.10-flyers-radio-banks": true
     }
   },
   "rewrites": [
-    { "source": "/", "destination": "/api/render299" }
+    { "source": "/", "destination": "/api/render2910" }
   ],
   "headers": [
     {
