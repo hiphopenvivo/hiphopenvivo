@@ -7,11 +7,12 @@
       "hhv-v2.9.4-preview": false,
       "hhv-v2.9.5-preview": false,
       "hhv-v2.9.6-preview": false,
-      "hhv-v2.9.7-preview": true
+      "hhv-v2.9.7-preview": false,
+      "hhv-v2.9.8-unified": true
     }
   },
   "rewrites": [
-    { "source": "/", "destination": "/api/render297" }
+    { "source": "/", "destination": "/api/render298" }
   ],
   "headers": [
     {
