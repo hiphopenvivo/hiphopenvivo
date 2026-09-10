@@ -19,36 +19,17 @@ module.exports = function handler(req, res) {
     render295(req, capture);
 
     if (statusCode === 200 && body.includes('</body>')) {
+      const igFirstFns = "function img(e){let src=http(e.source_url),u=F[e.id]||e.flyer_url||'',id=driveId(u);if(igSource(src))return '/api/igflyer?url='+encodeURIComponent(src)+(id?'&fallbackId='+encodeURIComponent(id):'');if(id)return '/api/flyer?id='+encodeURIComponent(id);if(u)return u;return''}function sourceKind(e){let src=http(e.source_url),u=F[e.id]||e.flyer_url||'';if(igSource(src))return'ig';return driveId(u)?'drive':u?'web':''}";
+      const driveFirstFns = "function img(e){let u=F[e.id]||e.flyer_url||'',id=driveId(u);if(id)return '/api/flyer?id='+encodeURIComponent(id);if(u)return u;let src=http(e.source_url);return igSource(src)?('/api/igflyer?url='+encodeURIComponent(src)):''}function sourceKind(e){let u=F[e.id]||e.flyer_url||'';if(driveId(u)||u)return'drive';let src=http(e.source_url);return igSource(src)?'ig':''}";
+      if (body.includes(igFirstFns)) body = body.replace(igFirstFns, driveFirstFns);
+
+      const defaultRailRows = "function flyerRailRows(){let today=ymd(new Date()),all=E.filter(e=>igSource(e.source_url)&&img(e)),future=all.filter(e=>String(e.date||'').slice(0,10)>=today);return (future.length?future:all).slice(0,30)}";
+      const pinnedRailRows = "function flyerRailRows(){let today=ymd(new Date()),all=E.filter(e=>igSource(e.source_url)&&img(e)),future=all.filter(e=>String(e.date||'').slice(0,10)>=today),rows=(future.length?future:all).slice();let pin='rxnde-akozta-la-plata-2026-09-24';rows.sort((a,b)=>a.id===pin?-1:b.id===pin?1:String(a.date||'').localeCompare(String(b.date||'')));return rows.slice(0,30)}";
+      if (body.includes(defaultRailRows)) body = body.replace(defaultRailRows, pinnedRailRows);
+
       const recovery = `
 <script>
 (function HHVFlyerRailRecovery(){
-  try{
-    window.img=function(e){
-      var u=(typeof F!=='undefined'&&F[e.id])||e.flyer_url||'';
-      var id=typeof driveId==='function'?driveId(u):'';
-      if(id)return '/api/flyer?id='+encodeURIComponent(id);
-      if(u)return u;
-      var src=typeof http==='function'?http(e.source_url):String(e.source_url||'');
-      return (typeof igSource==='function'&&igSource(src))?('/api/igflyer?url='+encodeURIComponent(src)):'';
-    };
-    window.sourceKind=function(e){
-      var u=(typeof F!=='undefined'&&F[e.id])||e.flyer_url||'';
-      var id=typeof driveId==='function'?driveId(u):'';
-      if(id||u)return 'drive';
-      var src=typeof http==='function'?http(e.source_url):String(e.source_url||'');
-      return (typeof igSource==='function'&&igSource(src))?'ig':'';
-    };
-    window.flyerRailRows=function(){
-      var today=typeof ymd==='function'?ymd(new Date()):'';
-      var all=(typeof E!=='undefined'?E:[]).filter(function(e){return typeof igSource==='function'&&igSource(e.source_url)&&img(e)});
-      var future=all.filter(function(e){return String(e.date||'').slice(0,10)>=today});
-      var rows=(future.length?future:all).slice();
-      var pin='rxnde-akozta-la-plata-2026-09-24';
-      rows.sort(function(a,b){if(a.id===pin)return -1;if(b.id===pin)return 1;return String(a.date||'').localeCompare(String(b.date||''))});
-      return rows.slice(0,30);
-    };
-  }catch(_err){}
-
   var tries=0;
   var timer=setInterval(function(){
     tries++;
@@ -80,7 +61,7 @@ module.exports = function handler(req, res) {
     res.statusCode = statusCode;
     for (const [name, value] of Object.entries(headers)) res.setHeader(name, value);
     res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('X-HHV-Version', '2.9.7-preview-hhv-doc-rxnde');
+    res.setHeader('X-HHV-Version', '2.9.7-preview-drive-first-effective');
     return res.end(body);
   } catch (error) {
     console.error('HHV render297 wrapper error', error);
