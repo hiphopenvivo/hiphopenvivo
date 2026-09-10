@@ -13,7 +13,7 @@
     }
   },
   "rewrites": [
-    { "source": "/", "destination": "/api/render2910" }
+    { "source": "/", "destination": "/api/render2910final" }
   ],
   "headers": [
     {
