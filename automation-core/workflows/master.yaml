@@ -1,0 +1,95 @@
+version: 1
+name: HHV_WORKFLOW_MASTER
+status: foundation
+
+principles:
+  - durable_queue_before_processing
+  - idempotent_steps
+  - provider_independent_business_rules
+  - retries_with_backoff
+  - no_secrets_in_workflow_files
+  - every_critical_step_has_fallback
+
+steps:
+  - id: intake
+    input: instagram_post_url
+    output: queued_job
+    primary_executor: make
+    fallback_executor: supabase
+
+  - id: deduplicate
+    input: queued_job
+    output: unique_job
+    idempotency_key: source_url
+
+  - id: extract_post
+    input: source_url
+    output: normalized_instagram_post
+    primary_provider: apify
+    fallback_provider: manual_review
+
+  - id: detect_media
+    input: normalized_instagram_post
+    output: media_manifest
+    media_types:
+      - image
+      - video
+      - carousel
+
+  - id: download_media
+    input: media_manifest
+    output: downloaded_media
+    primary_storage: google_drive
+    fallback_storage: supabase_storage
+
+  - id: classify_event
+    input:
+      - caption
+      - flyer_or_video_context
+    output: event_classification
+    primary_provider: gemini
+    fallback_provider: manual_review
+
+  - id: calculate_calendar_slot
+    input: event_date
+    output:
+      - year
+      - month
+      - hhv_week
+    rule: first_sunday_then_monday_sunday_blocks
+
+  - id: persist_event
+    input: event_classification
+    output: event_record
+    primary_database: supabase_postgres
+
+  - id: persist_media
+    input: downloaded_media
+    output: hhv_media_records
+    primary_database: supabase_postgres
+
+  - id: update_inbox
+    input:
+      - processing_result
+      - event_record
+      - media_records
+    output: hhv_inbox_state
+
+  - id: enqueue_publication
+    input: processed_event
+    output: publication_job
+    primary_provider: metricool
+    fallback_provider: manual_publication_queue
+
+states:
+  - PENDIENTE
+  - PROCESANDO
+  - COMPLETO
+  - ERROR
+  - PAUSADO
+
+failure_policy:
+  max_attempts: 5
+  stale_processing_minutes: 30
+  preserve_payload_on_failure: true
+  never_delete_failed_job_automatically: true
